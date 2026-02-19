@@ -20,6 +20,7 @@ int main () {
         exit(0);
     }
     else {
+        int cnt = 5;
         while(1) {
             printf("I am father, pid:%d, ppid:%d, cnt:%d\n", getpid(), getppid(), cnt);
             cnt--;
