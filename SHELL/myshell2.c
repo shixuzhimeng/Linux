@@ -62,7 +62,7 @@ int ParseCommand(char *cline, Command *commands[], int *commandcount) {
     //检查是否有后台运行
     int background = 0;
     char *find = strchr(_cline, '&');
-    if(!find) {
+    if(find) {
         char *last = NULL;
         char *tmp = _cline;
         while((tmp = strchr(tmp, '&')) != NULL) {
@@ -111,6 +111,50 @@ int ParseCommand(char *cline, Command *commands[], int *commandcount) {
         command->inputredir.type = REDIR_NONE;
         command->outputredir.type = REDIR_NONE;
 
+        char *reout = strchr(cut1, '>');
+        if(reout) {
+            int append = 0;
+            char *file_start = NULL;  // 文件名起始位置
+            
+            // 检查是否是 >>
+            if(*(reout + 1) == '>') {
+                append = 1;
+                file_start = reout + 2;  // 文件名从第二个 > 后面开始
+                
+                // 删除两个 > 字符
+                char *src = reout + 2;
+                char *dst = reout;
+                while(*src) {
+                    *dst++ = *src++;
+                }
+                *dst = '\0';
+            } 
+            else {
+                append = 0;
+                file_start = reout + 1;  // 文件名从 > 后面开始
+                *reout = '\0';  // 删除单个 >
+            }
+                
+            while(isspace(*file_start)) {
+                file_start++;
+        }
+    
+        // 查找文件名结束位置
+        char *file_end = file_start;
+        while(*file_end && !isspace(*file_end) && *file_end != '|' && *file_end != '<') {
+            file_end++;
+        }
+        
+        // 提取文件名
+        char tmp = *file_end;
+        *file_end = '\0';
+        
+        command->outputredir.type = append ? REDIR_APPEND : REDIR_OUTPUT;
+        command->outputredir.file = strdup(file_start);
+        
+        *file_end = tmp;
+        }   
+
         char *rein = strchr(cut1, '<');
         if(rein) {
             char *file_s = rein + 1;
@@ -129,30 +173,7 @@ int ParseCommand(char *cline, Command *commands[], int *commandcount) {
             *file_e = tmp;
             *rein = '\0';
         }
-        char *reout = strchr(cut1, '>');
-        if(reout) {
-            int append = 0;
-            if(*(reout + 1) == '>') {
-                append = 1;
-                reout++;
-            }
-            char *file_s = reout + 1;
-            while(isspace(*file_s)) {
-                file_s++;
-            }
-            char *file_e = file_s;
-            while (*file_e && !isspace(*file_e) && *file_e != '|' && *file_e != '<') {
-                file_e++;
-            }
-            char tmp = *file_e;
-            *file_e = '\0';
-            
-            command->outputredir.type = append ? REDIR_APPEND : REDIR_OUTPUT;
-            command->outputredir.file = strdup(file_s);
-            
-            *file_e = tmp;
-            *reout = '\0';
-        }
+        
 
         char *cutsaveptr;
         char *cut2 = strtok_r(cut1, DELIM, &cutsaveptr);
@@ -379,7 +400,6 @@ void ExecutePipeline(Command *commands[], int commandcount) {
                 exit(1);
             }
             execvp(commands[i]->argv[0], commands[i]->argv);
-            fprintf(stderr, RED"%s: 没有找到命令"NONE "\n", commands[i]->argv[0]);
             exit(127);
         }
         pids[i] = pid;
@@ -426,17 +446,55 @@ void ExecuteSimple(Command *command) {
         waitpid(pid, &status, 0);
     }
 }
-
 void ExecuteCommand(Command *commands[], int commandcount) {
     if(commandcount == 0) {
         return ;
     }
+    
+    int all_builtin = 1;
     for(int i = 0; i < commandcount; i++) {
-        BuildCommand(commands[i]);
+        if(!isCommand(commands[i])) {
+            all_builtin = 0;
+            break;
+        }
     }
-    if(commandcount == 1 && isCommand(commands[0])) {
-        return ;
+    
+    if(all_builtin && commandcount == 1) {
+        Command *cmd = commands[0];
+
+        int saved_stdout = dup(STDOUT_FILENO);
+
+        if(cmd->outputredir.type != REDIR_NONE) {
+            int flags = O_WRONLY | O_CREAT;
+            if(cmd->outputredir.type == REDIR_OUTPUT) {
+                flags |= O_TRUNC;
+            } else {
+                flags |= O_APPEND;
+            }
+            
+            int fd = open(cmd->outputredir.file, flags, 0644);
+            if(fd >= 0) {
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+            }
+        }
+
+        BuildCommand(cmd);
+        
+        fflush(stdout);
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+        
+        return;
     }
+    
+    if(all_builtin && commandcount > 1) {
+        for(int i = 0; i < commandcount; i++) {
+            BuildCommand(commands[i]);
+        }
+        return;
+    }
+    
     ExecutePipeline(commands, commandcount);
 }
 

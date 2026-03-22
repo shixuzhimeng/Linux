@@ -1,6 +1,7 @@
 #include "myshell2.h"
 
 int main() {
+    getpwd();
     setup_signal_handlers();
     
     Command *commands[MAX_PIPELINE];
