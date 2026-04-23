@@ -13,9 +13,11 @@ void *th_fn(void * arg) {
     Race *r = (Race*)arg;
     for(int i = r->start; i <= r->end; i++) {
         printf("%s(%lx) running %d\n", r->name, pthread_self(), i);
-        usleep(10);
+        int time = (int)(drand48()*1000000);
+        usleep(time);
     }
-    return (void*)0;
+    //return (void*)0;
+    return (void*)(r->end - r->start);
 }
 
 int main () {
@@ -29,9 +31,19 @@ int main () {
     if((err = pthread_create(&trutle, NULL, th_fn, (void*)&t)) != 0) {
         perror("failed");
     }
-    pthread_join(rabbit, NULL);
-    pthread_join(trutle, NULL);
-    printf("contral pthread is %lx", pthread_self());
-    printf("finished");
+    
+    // pthread_join(rabbit, NULL);
+    // pthread_join(trutle, NULL);
+    
+    int result;
+    pthread_join(rabbit, (void*)&result);
+    printf("rabbit race is %d\n",result);
+    pthread_join(trutle, (void*)&result);
+    printf("trutle race is %d\n", result);
+    printf("race finished\n");
+
+    
+    printf("contral pthread is %lx\n", pthread_self());
+    printf("finished\n");
     return 0;
 }
