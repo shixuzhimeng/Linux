@@ -9,7 +9,7 @@
 //#include <netinet/in.h>
 #include <pthread.h>
 
-#define SOCK_PORT 9530
+#define SOCK_PORT 9527
 
 void sys_err(const char *str) {
     perror(str);
