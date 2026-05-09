@@ -1,0 +1,26 @@
+#include "wrap.h"
+void sys_err(const char *str) {
+    perror(str);
+    exit(1);
+}
+
+//情况分析不全，可以使用goto again来转跳循环
+int Socket(int domain, int type, int protocol) {
+    int n;
+    n = socket(domain, type, protocol);
+    if(n == -1) {
+        sys_err("socket error");
+        return n;
+    }
+    return 0;
+}
+
+int Listen(int sockfd, int backlog) {
+    int n;
+    n = listen(sockfd, backlog);
+    if(n == -1) {
+        sys_err("listen error");
+        return n;
+    }
+    return 0;
+}

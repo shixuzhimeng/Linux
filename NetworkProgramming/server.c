@@ -1,21 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <ctype.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-//#include <netinet/in.h>
-#include <pthread.h>
+#include "wrap.h"
 
 #define SOCK_PORT 9527
-
-void sys_err(const char *str) {
-    perror(str);
-    exit(1);
-}
-
 
 int main (int argc, char *argv[]) {
     int lfd = 0, cfd = 0;
@@ -29,7 +14,7 @@ int main (int argc, char *argv[]) {
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(SOCK_PORT);
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    lfd = socket(AF_INET, SOCK_STREAM, 0);
+    lfd = Socket(AF_INET, SOCK_STREAM, 0);
     if(lfd == -1) {
         sys_err("socket error");
     }
@@ -37,7 +22,7 @@ int main (int argc, char *argv[]) {
     if (bind(lfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
         sys_err("bind error");
 
-    if (listen(lfd, 128) == -1)
+    if (Listen(lfd, 128) == -1)
         sys_err("listen error");
 
     clit_addr_len = sizeof(clit_addr);
