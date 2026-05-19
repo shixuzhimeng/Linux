@@ -19,7 +19,7 @@ void senddata(int fd, int events, void *arg);
 struct myevent_s {
     int fd;
     int events;
-    void *arg;
+    void *arg;                // 泛型参数
     void (*call_back)(int fd, int events, void *arg);
     int status;               // 0: 不在epoll中, 1: 在epoll中
     char buf[BUFLEN];
@@ -28,9 +28,10 @@ struct myevent_s {
     long last_active;
 };
 
-int g_efd;
+int g_efd;                                  // epoll_create函数的返回值
 struct myevent_s g_events[MAX_EVENT + 1];   // 最后一个位置给监听socket
 
+// 将myevent结构体初始化 设置回调函数
 void eventset(struct myevent_s *ev, int fd, void(*call_back)(int, int, void*), void *arg) {
     ev->fd = fd;
     ev->call_back = call_back;
@@ -50,6 +51,7 @@ void eventadd(int efd, int events, struct myevent_s *ev) {
     epv.data.ptr = ev;
     epv.events = ev->events = events;
 
+    // 数据是否添加到红黑树上设置状态
     if (ev->status == 0) {
         op = EPOLL_CTL_ADD;
         ev->status = 1;
@@ -57,6 +59,7 @@ void eventadd(int efd, int events, struct myevent_s *ev) {
         op = EPOLL_CTL_MOD;
     }
 
+    //将数据添加到红黑树上
     if (epoll_ctl(efd, op, ev->fd, &epv) < 0) {
         printf("event add/mod failed [fd=%d], events[%d]: %s\n", ev->fd, events, strerror(errno));
     } else {
@@ -76,6 +79,7 @@ void eventdel(int efd, struct myevent_s *ev) {
     }
 }
 
+// 接受客户端链接
 void acceptconnect(int lfd, int events, void *arg) {
     struct sockaddr_in clie_addr;
     socklen_t len = sizeof(clie_addr);
@@ -112,6 +116,7 @@ void acceptconnect(int lfd, int events, void *arg) {
             break;
         }
 
+        //添加新事件
         eventset(&g_events[i], cfd, recvdata, &g_events[i]);
         eventadd(g_efd, EPOLLIN, &g_events[i]);
 
@@ -122,6 +127,8 @@ void acceptconnect(int lfd, int events, void *arg) {
     }
 }
 
+
+// 接收数据
 void recvdata(int fd, int events, void *arg) {
     struct myevent_s *ev = (struct myevent_s*)arg;
     int len = recv(fd, ev->buf, sizeof(ev->buf), 0);
@@ -159,6 +166,7 @@ void recvdata(int fd, int events, void *arg) {
     }
 }
 
+// 发送数据
 void senddata(int fd, int events, void *arg) {
     struct myevent_s *ev = (struct myevent_s*)arg;
     int len = send(fd, ev->buf + ev->offset, ev->len - ev->offset, 0);
@@ -197,31 +205,36 @@ void senddata(int fd, int events, void *arg) {
     }
 }
 
+// 整体封装 --- 初始化， 创建套接字， 连接， 监听窗口
 void initlistenfd(int efd, short port) {
-    struct sockaddr_in serv_addr;
-    int lfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (lfd == -1) {
+    struct sockaddr_in serv_addr;   // 创建服务器结构体
+    int lfd = socket(AF_INET, SOCK_STREAM, 0);   // 创建套接字
+    if (lfd == -1) {  // 错误判断
         printf("socket create failed: %s\n", strerror(errno));
-        exit(1);
+        exit(1);  // 直接结束
     }
 
     // 设置地址重用
     int opt = 1;
     setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
+    // 设置非阻塞
     fcntl(lfd, F_SETFL, O_NONBLOCK);
 
+    // 初始化结构体
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
     serv_addr.sin_addr.s_addr = INADDR_ANY;
 
+    // 绑定套接字
     if (bind(lfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         printf("bind failed: %s\n", strerror(errno));
         close(lfd);
         exit(1);
     }
 
+    //设置监听窗口
     if (listen(lfd, 128) < 0) {
         printf("listen failed: %s\n", strerror(errno));
         close(lfd);
@@ -238,21 +251,22 @@ void initlistenfd(int efd, short port) {
 int main(int argc, char *argv[]) {
     unsigned short port = SERV_PORT;
     if (argc == 2) {
-        port = atoi(argv[1]);
+        port = atoi(argv[1]); // 用户指定端口号，没有则使用默认的端口号
     }
 
-    g_efd = epoll_create(1);   // 参数已忽略，随便给个正数
+    g_efd = epoll_create(1);   // 创建红黑树，指向红黑树的根结点
     if (g_efd < 0) {
-        printf("epoll_create error: %s\n", strerror(errno));
+        printf("epoll_create error: %s\n", strerror(errno));   //错误判断
         return 1;
     }
 
     initlistenfd(g_efd, port);
 
+    // 监听事件集合
     struct epoll_event events[MAX_EVENT + 1];
     printf("server running: port=%d\n", port);
 
-    int checkpos = 0;
+    int checkpos = 0;   // 标记位置
     while (1) {
         // 超时检测（每循环一次扫描所有客户端）
         long now = time(NULL);
@@ -260,6 +274,7 @@ int main(int argc, char *argv[]) {
             if (checkpos >= MAX_EVENT) checkpos = 0;
             if (g_events[checkpos].status == 1) {
                 long duration = now - g_events[checkpos].last_active;
+                //超时直接移除
                 if (duration >= 60) {
                     printf("fd=%d timeout, close\n", g_events[checkpos].fd);
                     close(g_events[checkpos].fd);
@@ -270,12 +285,14 @@ int main(int argc, char *argv[]) {
             checkpos++;
         }
 
+        //阻塞等待事件发生
         int nfd = epoll_wait(g_efd, events, MAX_EVENT + 1, 1000);
         if (nfd < 0) {
             printf("epoll_wait error: %s\n", strerror(errno));
             break;
         }
 
+        //循环分发事件进行处理
         for (int i = 0; i < nfd; i++) {
             struct myevent_s *ev = (struct myevent_s*)events[i].data.ptr;
             // 按照就绪的事件类型调用相应的回调（回调内部会进一步判断具体事件）
